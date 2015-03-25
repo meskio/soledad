@@ -28,6 +28,7 @@ import threading
 
 from pycryptopp.cipher.aes import AES
 from pycryptopp.cipher.xsalsa20 import XSalsa20
+from u1db import errors
 from zope.proxy import sameProxiedObjects
 
 from leap.soledad.common import soledad_assert
@@ -1017,6 +1018,9 @@ class SyncDecrypterPool(SyncEncryptDecryptPool):
             doc = SoledadDocument(doc_id, doc_rev, content)
             gen = int(gen)
             insert_fun(doc, gen, trans_id)
+        except errors.InvalidGeneration as exc:
+            # raise it up so we can stop the insert loop
+            raise
         except Exception as exc:
             logger.error("Sync decrypter pool: error while inserting "
                          "decrypted doc into local db.")

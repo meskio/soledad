@@ -52,6 +52,11 @@ from leap.soledad.client.events import signal
 
 logger = logging.getLogger(__name__)
 
+"""
+How many times a the decryption syncing should be retried in case of error.
+"""
+DECRYPT_SYNC_MAX_RETRIES = 5
+
 
 def _gunzip(data):
     """
@@ -1478,8 +1483,18 @@ class SoledadSyncTarget(HTTPSyncTarget, TokenBasedAuth):
             return
 
         decrypter = self._sync_decr_pool
-        decrypter.decrypt_received_docs()
-        decrypter.process_decrypted()
+        retries = DECRYPT_SYNC_MAX_RETRIES
+        while retries > 0:
+            try:
+                decrypter.decrypt_received_docs()
+                if decrypter.process_decrypted():
+                    # all the pending docs have being processed
+                    break
+            except Exception as exc:
+                logger.error("Sync decrypter: non-recovered error while "
+                             "processing sync docs.")
+                logger.exception(exc)
+            retries -= 1
 
     def _sign_request(self, method, url_query, params):
         """
