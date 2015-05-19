@@ -49,6 +49,7 @@ from leap.common.config import get_path_prefix
 from leap.soledad.common import SHARED_DB_NAME
 from leap.soledad.common import soledad_assert
 from leap.soledad.common import soledad_assert_type
+from leap.soledad.common.errors import SoledadError
 
 from leap.soledad.client import adbapi
 from leap.soledad.client import events as soledad_events
@@ -666,6 +667,7 @@ class Soledad(object):
             failure.printDetailedTraceback(file=s)
             msg = "Soledad exception when syncing!\n" + s.getvalue()
             logger.error(msg)
+            raise SoledadError(failure.getErrorMessage())
 
         d.addCallbacks(_sync_callback, _sync_errback)
         return d
