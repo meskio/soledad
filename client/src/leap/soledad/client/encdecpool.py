@@ -381,7 +381,6 @@ class SyncDecrypterPool(SyncEncryptDecryptPool):
         self._processed_docs = 0
         self._last_inserted_idx = 0
 
-        self._async_results = []
         self._failure = None
         self._finished = False
 
@@ -533,9 +532,7 @@ class SyncDecrypterPool(SyncEncryptDecryptPool):
         secret = self._crypto.secret
         args = doc_id, rev, content, gen, trans_id, key, secret, idx
         # decrypt asynchronously
-        self._async_results.append(
-            self._pool.apply_async(
-                decrypt_doc_task, args))
+        return self._pool.apply_async(decrypt_doc_task, args)
 
     def _decrypt_doc_cb(self, result):
         """
@@ -620,9 +617,13 @@ class SyncDecrypterPool(SyncEncryptDecryptPool):
         :rtype: twisted.internet.defer.Deferred
         """
         docs = yield self._get_docs(encrypted=True)
+        deferreds = []
         for doc_id, rev, content, gen, trans_id, _, idx in docs:
-            self._async_decrypt_doc(
+            d = self._async_decrypt_doc(
                 doc_id, rev, content, gen, trans_id, idx)
+            d.addCallback(self._decrypt_doc_cb)
+            deferreds.append(d)
+        yield defer.gatherResults(deferreds)
 
     @defer.inlineCallbacks
     def _process_decrypted_docs(self):
@@ -706,19 +707,6 @@ class SyncDecrypterPool(SyncEncryptDecryptPool):
         query = "DELETE FROM %s WHERE 1" % (self.TABLE_NAME,)
         return self._runOperation(query)
 
-    def _collect_async_decryption_results(self):
-        """
-        Collect the results of the asynchronous doc decryptions and re-raise
-        any exception raised by a multiprocessing async decryption call.
-
-        :raise Exception: Raised if an async call has raised an exception.
-        """
-        async_results = self._async_results[:]
-        for res in async_results:
-            if res.ready():
-                self._decrypt_doc_cb(res.get())  # might raise an exception!
-                self._async_results.remove(res)
-
     @defer.inlineCallbacks
     def _decrypt_and_process_docs(self):
         """
@@ -740,7 +728,6 @@ class SyncDecrypterPool(SyncEncryptDecryptPool):
 
             if not self.has_finished() and processed < pending:
                 yield self._async_decrypt_received_docs()
-                yield self._collect_async_decryption_results()
                 docs = yield self._process_decrypted_docs()
                 yield self._delete_processed_docs(docs)
                 # recurse
