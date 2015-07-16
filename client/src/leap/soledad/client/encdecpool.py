@@ -714,10 +714,14 @@ class SyncDecrypterPool(SyncEncryptDecryptPool):
         :raise Exception: Raised if an async call has raised an exception.
         """
         async_results = self._async_results[:]
+        deferreds = []
         for res in async_results:
             if res.ready():
-                self._decrypt_doc_cb(res.get())  # might raise an exception!
-                self._async_results.remove(res)
+                d = self._decrypt_doc_cb(res.get())  # might raise an exception!
+                d.addCallback(lambda _:
+                              self._async_results.remove(res))
+                deferreds.append(d)
+        return defer.gatherResults(deferreds)
 
     @defer.inlineCallbacks
     def _decrypt_and_process_docs(self):
